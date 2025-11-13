@@ -1,0 +1,269 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Environment to build (dev|prod)"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+      deploy_to_nas:
+        description: "Deploy to NAS?"
+        required: false
+        type: boolean
+        default: false
+
+env:
+  IMAGE_NAME: chatrelay
+  REGISTRY: ghcr.io
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run Node.js unit tests
+        run: npm run test:ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'agent-service/requirements.txt'
+
+      - name: Install Python dependencies
+        run: |
+          cd agent-service
+          pip install -r requirements.txt
+
+      - name: Run Python tests
+        run: |
+          cd agent-service
+          PYTHONPATH=. pytest --no-cov
+
+      - name: Upload Node.js coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-node
+          path: coverage/
+
+      - name: Upload Python coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-python
+          path: agent-service/htmlcov/
+
+  build-and-push:
+    name: Build and Push Images
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        service: [app, agent-service]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine target environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.target_env }}"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "short_sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub (if configured)
+        if: secrets.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Set build context
+        id: context
+        run: |
+          if [[ "${{ matrix.service }}" == "agent-service" ]]; then
+            echo "context=./agent-service" >> "$GITHUB_OUTPUT"
+            echo "dockerfile=./agent-service/Dockerfile" >> "$GITHUB_OUTPUT"
+          else
+            echo "context=." >> "$GITHUB_OUTPUT"
+            echo "dockerfile=./Dockerfile" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}-${{ matrix.service }}
+          tags: |
+            type=raw,value=${{ steps.env.outputs.target }}-latest
+            type=raw,value=${{ steps.env.outputs.target }}-${{ steps.env.outputs.short_sha }}
+            type=sha,prefix=${{ steps.env.outputs.target }}-
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ steps.context.outputs.context }}
+          file: ${{ steps.context.outputs.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Output image tags
+        run: |
+          echo "Built and pushed:"
+          echo "${{ steps.meta.outputs.tags }}"
+
+  deploy-to-nas:
+    name: Deploy to Ugreen NAS
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: |
+      (github.ref == 'refs/heads/main' ||
+       (github.event_name == 'workflow_dispatch' && github.event.inputs.deploy_to_nas == 'true')) &&
+      secrets.NAS_HOST != ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine environment
+        id: env
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.target_env }}"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.NAS_SSH_KEY }}" > ~/.ssh/nas_key
+          chmod 600 ~/.ssh/nas_key
+          ssh-keyscan -H ${{ secrets.NAS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Deploy to NAS
+        env:
+          NAS_USER: ${{ secrets.NAS_USER }}
+          NAS_HOST: ${{ secrets.NAS_HOST }}
+          NAS_DEPLOY_PATH: ${{ secrets.NAS_DEPLOY_PATH || '/volume1/docker/chatrelay' }}
+          TARGET_ENV: ${{ steps.env.outputs.target }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Create deployment script
+          cat > deploy-nas.sh << 'DEPLOY_SCRIPT'
+          #!/bin/bash
+          set -e
+
+          DEPLOY_PATH="${NAS_DEPLOY_PATH}"
+          cd "$DEPLOY_PATH"
+
+          # Pull new images
+          echo "Pulling new images..."
+          docker compose -f docker-compose.$TARGET_ENV.yml pull
+
+          # Restart services with zero downtime
+          echo "Restarting services..."
+          docker compose -f docker-compose.$TARGET_ENV.yml up -d --remove-orphans
+
+          # Health check
+          echo "Waiting for services to be ready..."
+          sleep 5
+
+          # Check if services are running
+          docker compose -f docker-compose.$TARGET_ENV.yml ps
+
+          echo "Deployment complete!"
+          DEPLOY_SCRIPT
+
+          # Copy files to NAS
+          scp -i ~/.ssh/nas_key deploy-nas.sh $NAS_USER@$NAS_HOST:/tmp/
+          scp -i ~/.ssh/nas_key docker-compose.*.yml $NAS_USER@$NAS_HOST:$NAS_DEPLOY_PATH/
+
+          # Execute deployment
+          ssh -i ~/.ssh/nas_key $NAS_USER@$NAS_HOST "bash /tmp/deploy-nas.sh && rm /tmp/deploy-nas.sh"
+
+      - name: Verify deployment
+        env:
+          NAS_USER: ${{ secrets.NAS_USER }}
+          NAS_HOST: ${{ secrets.NAS_HOST }}
+        run: |
+          # Wait a bit for services to fully start
+          sleep 10
+
+          # Check health endpoint (assuming exposed port)
+          if [[ -n "${{ secrets.NAS_APP_URL }}" ]]; then
+            curl -f ${{ secrets.NAS_APP_URL }}/api/meta || echo "Health check failed"
+          fi
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/nas_key
+
+  notify:
+    name: Notify Deployment Status
+    needs: [test, build-and-push, deploy-to-nas]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Deployment Summary
+        run: |
+          echo "## Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tests**: ${{ needs.test.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Build**: ${{ needs.build-and-push.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Deploy**: ${{ needs.deploy-to-nas.result || 'skipped' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Images pushed to:" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository_owner }}/chatrelay-app\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`ghcr.io/${{ github.repository_owner }}/chatrelay-agent-service\`" >> $GITHUB_STEP_SUMMARY

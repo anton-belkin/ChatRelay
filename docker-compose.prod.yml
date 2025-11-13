@@ -1,7 +1,7 @@
 services:
   app:
-    image: docker.io/YOUR_DOCKERHUB_USER/nas-landing:prod-latest
-    container_name: nas-landing-prod
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-YOUR_GITHUB_USERNAME}/chatrelay-app:prod-latest
+    container_name: chatrelay-prod
     env_file:
       - .env.production
     environment:
@@ -19,8 +19,8 @@ services:
     restart: unless-stopped
 
   agent-service:
-    build:
-      context: ./agent-service
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER:-YOUR_GITHUB_USERNAME}/chatrelay-agent-service:prod-latest
+    container_name: chatrelay-agent-prod
     env_file:
       - .env.production
     environment:
@@ -35,6 +35,7 @@ services:
 
   mcp-gateway:
     image: docker/mcp-gateway:latest
+    container_name: chatrelay-mcp-prod
     command:
       - --transport=streaming
       - --catalog=/mcp-config/catalog.yaml
@@ -45,3 +46,4 @@ services:
       - ./mcp:/mcp-config:ro
     ports:
       - "8080:8080"
+    restart: unless-stopped
