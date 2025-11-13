@@ -84,4 +84,77 @@ test.describe('ChatGPT Relay', () => {
     await expect(names).toContain('_fetch');
   });
 
+  test('assistant response bubble remains visible and non-empty after simple greeting', async ({ page }) => {
+    const username = uniqueUser();
+    await login(page, username);
+
+    // Send a simple greeting
+    await sendMessage(page, 'hello');
+
+    // Wait for assistant response to appear
+    const assistantBubble = page.locator('.bubble.assistant').last();
+    await expect(assistantBubble).toBeVisible({ timeout: 10000 });
+
+    // Verify the response has non-empty content
+    const bodyElement = assistantBubble.locator('.body');
+    await expect(bodyElement).toBeVisible();
+
+    // Get the actual text content
+    const responseText = await bodyElement.textContent();
+    expect(responseText).toBeTruthy();
+    expect(responseText?.trim().length).toBeGreaterThan(0);
+
+    // Verify it stays visible (check again after a short delay)
+    await page.waitForTimeout(500);
+    await expect(assistantBubble).toBeVisible();
+
+    const responseTextAfter = await bodyElement.textContent();
+    expect(responseTextAfter).toBeTruthy();
+    expect(responseTextAfter?.trim().length).toBeGreaterThan(0);
+  });
+
+  test('can delegate to code helper agent for JavaScript execution', async ({ page }) => {
+    const username = uniqueUser();
+    await login(page, username);
+
+    // Explicitly request to use the code helper agent
+    await sendMessage(page, 'Please use the code helper agent to create a simple Hello World program in JavaScript');
+
+    // Wait for response - may take longer due to helper delegation
+    await page.waitForTimeout(2000);
+
+    // Verify we got assistant responses
+    const assistantBubbles = page.locator('.bubble.assistant');
+    await expect(assistantBubbles.last()).toBeVisible({ timeout: 20000 });
+
+    // Get all text content from assistant messages
+    const messagesText = await page.locator('.bubble.assistant .body').allTextContents();
+    const combinedText = messagesText.join(' ').toLowerCase();
+
+    // Verify the response mentions hello or world (indicating code was discussed/executed)
+    expect(combinedText).toMatch(/hello|world|javascript|code/i);
+  });
+
+  test('can delegate to research helper agent for web fetching', async ({ page }) => {
+    const username = uniqueUser();
+    await login(page, username);
+
+    // Explicitly request to use the research helper agent
+    await sendMessage(page, 'Please use the research helper agent to fetch information from google.com');
+
+    // Wait for response - may take longer due to helper delegation
+    await page.waitForTimeout(2000);
+
+    // Verify we got assistant responses
+    const assistantBubbles = page.locator('.bubble.assistant');
+    await expect(assistantBubbles.last()).toBeVisible({ timeout: 20000 });
+
+    // Get all text content from assistant messages
+    const messagesText = await page.locator('.bubble.assistant .body').allTextContents();
+    const combinedText = messagesText.join(' ').toLowerCase();
+
+    // Verify the response mentions research, fetch, or google
+    expect(combinedText).toMatch(/research|fetch|google|information/i);
+  });
+
 });

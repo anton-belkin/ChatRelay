@@ -289,3 +289,132 @@ button[type='submit'] {
     min-height: 300px;
   }
 }
+
+/* Debug Panel Styles */
+.debug-panel {
+  background: rgba(30, 30, 40, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  max-height: 400px;
+  overflow: hidden;
+}
+
+.debug-panel.collapsed {
+  max-height: 60px;
+}
+
+.debug-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.debug-header h2 {
+  font-size: 1rem;
+  margin: 0;
+  font-weight: 500;
+}
+
+.debug-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.debug-content {
+  max-height: 320px;
+  overflow-y: auto;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
+  font-size: 0.75rem;
+}
+
+.debug-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.debug-event {
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 3px solid #666;
+  padding: 0.5rem;
+  border-radius: 0.25rem;
+}
+
+.debug-event.openai-call {
+  border-left-color: #4a9eff;
+}
+
+.debug-event.openai-response {
+  border-left-color: #50c878;
+}
+
+.debug-event.tool-execution {
+  border-left-color: #f39c12;
+}
+
+.debug-event.helper-spawn {
+  border-left-color: #9b59b6;
+}
+
+.debug-event.helper-iteration {
+  border-left-color: #8e44ad;
+}
+
+.debug-event.helper-complete {
+  border-left-color: #27ae60;
+}
+
+.debug-event.helper-error {
+  border-left-color: #e74c3c;
+}
+
+.debug-event.main-iteration {
+  border-left-color: #3498db;
+}
+
+.debug-event-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+  opacity: 0.7;
+}
+
+.debug-event-type {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+}
+
+.debug-event-time {
+  font-size: 0.65rem;
+}
+
+.debug-event-body {
+  font-size: 0.7rem;
+  line-height: 1.4;
+}
+
+.debug-event-body pre {
+  margin: 0.25rem 0;
+  padding: 0.25rem;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 0.25rem;
+  overflow-x: auto;
+}
+
+.debug-memory {
+  background: rgba(0, 0, 0, 0.4);
+  padding: 1rem;
+  border-radius: 0.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.debug-memory pre {
+  margin: 0;
+  font-size: 0.7rem;
+  white-space: pre-wrap;
+}

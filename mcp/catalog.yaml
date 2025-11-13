@@ -26,3 +26,13 @@ registry:
       - name: sandbox_initialize
       - name: sandbox_stop
       - name: search_npm_packages
+  memory:
+    description: Persistent key-value memory store for session data and agent context sharing.
+    title: Memory Store
+    type: server
+    image: mcp/memory
+    tools:
+      - name: memory_store
+      - name: memory_retrieve
+      - name: memory_delete
+      - name: memory_list

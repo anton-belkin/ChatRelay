@@ -23,6 +23,8 @@ const state = {
   version: '—',
   tools: [],
   toolbeltCollapsed: true,
+  currentAgent: null,
+  agentActivity: [],
 };
 
 const createCollapsibleBlock = ({ title, text, open = false }) => {
@@ -194,6 +196,54 @@ const setBusy = (flag, text = '') => {
   }
 };
 
+const updateAgentStatus = ({ type, payload }) => {
+  const helperIcons = {
+    research: '🔍',
+    code: '⚙️'
+  };
+
+  // Handle helper agent events (new coordinator pattern)
+  if (type === 'spawn' || type === 'helper-spawn') {
+    const helperId = payload.helper || payload.agent;
+    state.currentAgent = helperId;
+    const icon = helperIcons[helperId] || '🤖';
+    const helperName = payload.helperName || payload.agentName || helperId;
+    setBusy(true, `${icon} Main agent delegating to ${helperName}...`);
+    state.agentActivity.push({
+      type: 'helper-spawn',
+      helper: helperId,
+      helperName,
+      task: payload.task || payload.reason,
+      timestamp: payload.timestamp
+    });
+    console.log('[Helper Spawned]', helperId, payload.task);
+  } else if (type === 'helper-progress' || type === 'progress') {
+    const helperId = payload.helper || payload.agent;
+    const icon = helperIcons[helperId] || '🤖';
+    setBusy(true, `${icon} ${payload.message || 'Processing...'}`);
+  } else if (type === 'helper-complete' || type === 'complete') {
+    const helperId = payload.helper || payload.agent;
+    state.currentAgent = null;
+    const activity = {
+      type: 'helper-complete',
+      helper: helperId,
+      iterations: payload.iterations,
+      timestamp: payload.timestamp
+    };
+    state.agentActivity.push(activity);
+    console.log('[Helper Complete]', activity);
+  } else if (type === 'helper-error' || type === 'error') {
+    const helperId = payload.helper || payload.agent;
+    state.currentAgent = null;
+    setBusy(true, `❌ Helper error: ${payload.error}`);
+    state.agentActivity.push({
+      type: 'helper-error',
+      helper: helperId,
+      error: payload.error
+    });
+  }
+};
+
 const safeFetch = async (url, options = {}) => {
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
@@ -236,6 +286,14 @@ const streamChat = async ({ message, onToken, onComplete }) => {
         onComplete?.(payload);
       } else if (event === 'error') {
         throw new Error(payload.message || 'Chat stream error');
+      } else if (event === 'helper-spawn' || event === 'agent-spawn') {
+        updateAgentStatus({ type: 'helper-spawn', payload });
+      } else if (event === 'helper-progress' || event === 'agent-progress') {
+        updateAgentStatus({ type: 'helper-progress', payload });
+      } else if (event === 'helper-complete' || event === 'agent-complete') {
+        updateAgentStatus({ type: 'helper-complete', payload });
+      } else if (event === 'helper-error' || event === 'agent-error') {
+        updateAgentStatus({ type: 'helper-error', payload });
       }
     } catch (error) {
       throw error;
@@ -307,6 +365,8 @@ chatForm.addEventListener('submit', async (event) => {
       },
       onComplete: (payload) => {
         if (payload?.messages) {
+          // Use the full server conversation history
+          // Server is the source of truth for complete conversation
           state.messages = payload.messages;
           renderMessages();
         }

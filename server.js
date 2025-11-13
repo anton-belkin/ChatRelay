@@ -6,6 +6,8 @@ const OpenAI = require('openai');
 const { version: APP_VERSION } = require('./package.json');
 const historyStore = require('./lib/historyStore');
 const toolBridge = require('./lib/toolBridge');
+const mainCoordinator = require('./lib/agents/mainCoordinator');
+const debugEvents = require('./lib/debugEventCollector');
 
 dotenv.config();
 
@@ -26,6 +28,8 @@ try {
   FAKE_TOOL_ARGUMENTS_PARSED = { value: 10 };
 }
 const MAX_TOOL_ITERATIONS = Math.max(1, parseInt(process.env.TOOL_LOOP_LIMIT || '4', 10));
+const ENABLE_MULTI_AGENT = process.env.ENABLE_MULTI_AGENT === '1' || process.env.ENABLE_MULTI_AGENT === 'true';
+const AGENT_DEBUG_MODE = process.env.AGENT_DEBUG_MODE !== '0' && process.env.AGENT_DEBUG_MODE !== 'false'; // Default true
 
 const openaiApiKey = process.env.OPENAI_API_KEY;
 if (!openaiApiKey) {
@@ -91,6 +95,59 @@ app.get('/api/tools', async (req, res) => {
     res.json({ tools, version: APP_VERSION });
   } catch (error) {
     res.status(502).json({ error: error.message || 'Failed to load tools' });
+  }
+});
+
+app.get('/api/debug/events', ensureLoggedIn, (req, res) => {
+  const username = req.session.user?.username;
+  if (!username) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  const events = debugEvents.getEvents(username);
+  res.json({ events, username });
+});
+
+app.post('/api/debug/clear', ensureLoggedIn, (req, res) => {
+  const username = req.session.user?.username;
+  if (!username) {
+    return res.status(401).json({ error: 'Not authenticated' });
+  }
+
+  debugEvents.clearEvents(username);
+  res.json({ success: true });
+});
+
+app.get('/api/debug/memory', ensureLoggedIn, async (req, res) => {
+  try {
+    // Try to read the knowledge graph using MCP tools
+    const graphTool = (await toolBridge.refreshTools()).find(t => t.name === '_read_graph');
+
+    if (!graphTool) {
+      return res.json({ error: 'Knowledge graph tool not available', nodes: [] });
+    }
+
+    // Execute the read_graph tool
+    const result = await toolBridge.executeToolCall({
+      id: 'debug_read_graph',
+      type: 'function',
+      function: {
+        name: '_read_graph',
+        arguments: '{}'
+      }
+    });
+
+    // Parse the result
+    let graphData = {};
+    try {
+      graphData = JSON.parse(result.content || '{}');
+    } catch (e) {
+      graphData = { raw: result.content };
+    }
+
+    res.json(graphData);
+  } catch (error) {
+    res.status(500).json({ error: error.message || 'Failed to read memory' });
   }
 });
 
@@ -241,6 +298,7 @@ const streamModelResponse = async ({
   shouldStop,
   deterministicToolFlow = false,
   iteration = 0,
+  username = null, // For debug logging
 }) => {
   if (deterministicToolFlow) {
     return simulateDeterministicTurn({ iteration, sendToken });
@@ -269,6 +327,16 @@ const streamModelResponse = async ({
   if (tools?.length) {
     requestPayload.tools = tools;
     requestPayload.tool_choice = 'auto';
+  }
+
+  // Debug logging: OpenAI API call
+  if (username && AGENT_DEBUG_MODE) {
+    debugEvents.logOpenAICall(username, {
+      model: MODEL,
+      messages: payload,
+      tools,
+      iteration
+    });
   }
 
   const completion = await openai.chat.completions.create(requestPayload);
@@ -335,6 +403,15 @@ const streamModelResponse = async ({
       arguments: call.function?.arguments || '{}',
     },
   }));
+
+  // Debug logging: OpenAI API response
+  if (username && AGENT_DEBUG_MODE) {
+    debugEvents.logOpenAIResponse(username, {
+      content: assistantText.trim(),
+      toolCalls,
+      finishReason: 'stop'
+    });
+  }
 
   return {
     content: assistantText.trim(),
@@ -446,13 +523,55 @@ app.post('/api/chat', ensureLoggedIn, async (req, res) => {
   };
 
   try {
-    await handleAssistantResponse({
-      username: req.session.user.username,
-      conversation,
-      sendToken: streamToken,
-      shouldStop: () => clientClosed,
-      deterministicToolFlow,
-    });
+    // Coordinator mode (main agent with optional helpers)
+    if (ENABLE_MULTI_AGENT && !deterministicToolFlow) {
+      const result = await mainCoordinator.handleRequest({
+        userMessage: message.trim(),
+        username: req.session.user.username,
+        conversation,
+        streamModelResponse: async ({ messages, tools, model, sendToken, shouldStop }) => {
+          return await streamModelResponse({
+            payload: messages,
+            tools: tools || [],
+            sendToken: streamToken, // Use the actual token streaming function!
+            shouldStop,
+            deterministicToolFlow: false,
+            username: req.session.user.username // Pass username for debug logging
+          });
+        },
+        sendToken: (event, data) => {
+          if (!clientClosed) {
+            sendEvent(event, data);
+          }
+        },
+        shouldStop: () => clientClosed,
+        enableHelpers: ENABLE_MULTI_AGENT, // Can be controlled separately
+        debug: AGENT_DEBUG_MODE
+      });
+
+      // Add all messages from the agent's execution to the conversation
+      // This includes assistant responses, tool calls, and tool results
+      if (result.messages && result.messages.length > 0) {
+        conversation.push(...result.messages);
+      } else {
+        // Fallback: just add the final assistant message
+        conversation.push({
+          role: 'assistant',
+          content: result.content,
+          ...(result.toolCalls && result.toolCalls.length > 0 && { tool_calls: result.toolCalls })
+        });
+      }
+
+    } else {
+      // Legacy single-agent mode (existing behavior)
+      await handleAssistantResponse({
+        username: req.session.user.username,
+        conversation,
+        sendToken: streamToken,
+        shouldStop: () => clientClosed,
+        deterministicToolFlow,
+      });
+    }
 
     if (!clientClosed) {
       req.session.messages = conversation.slice(-40);
