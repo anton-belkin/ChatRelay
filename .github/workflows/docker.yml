@@ -1,0 +1,70 @@
+name: Build and Push Container
+
+on:
+  push:
+    branches: [develop, main]
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Environment to build (dev|prod)"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  IMAGE_NAME: nas-landing
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Determine target environment
+        id: target
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
+            TARGET="${{ github.event.inputs.target_env }}"
+          elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            TARGET="prod"
+          else
+            TARGET="dev"
+          fi
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to Docker Hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+      - name: Build and push image
+        env:
+          TARGET_ENV: ${{ steps.target.outputs.target }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          set -euo pipefail
+          IMAGE="docker.io/$DOCKERHUB_USERNAME/${{ env.IMAGE_NAME }}"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          docker build \
+            --tag "$IMAGE:$TARGET_ENV-latest" \
+            --tag "$IMAGE:$TARGET_ENV-$SHORT_SHA" \
+            .
+          docker push "$IMAGE:$TARGET_ENV-latest"
+          docker push "$IMAGE:$TARGET_ENV-$SHORT_SHA"
+
+      - name: Emit deployment hints
+        env:
+          TARGET_ENV: ${{ steps.target.outputs.target }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          IMAGE="docker.io/$DOCKERHUB_USERNAME/${{ env.IMAGE_NAME }}"
+          printf 'Built %s:%s-latest\n' "$IMAGE" "$TARGET_ENV"

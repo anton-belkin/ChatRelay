@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ChatGPT Relay</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header>
+        <div class="title-stack">
+          <h1>ChatGPT Relay</h1>
+          <span id="version-pill" class="version-pill" aria-live="polite">v—</span>
+        </div>
+        <button id="logout-btn" class="ghost hidden">Log out</button>
+      </header>
+
+      <section id="toolbelt" class="toolbelt hidden">
+        <div class="toolbelt-header">
+          <h2>Connected tools</h2>
+          <button id="tool-refresh-btn" class="ghost" type="button">Refresh</button>
+        </div>
+        <p id="tool-status" class="tool-status">Loading…</p>
+        <ul id="tool-list"></ul>
+      </section>
+
+      <section id="login-section">
+        <form id="login-form" autocomplete="off">
+          <label>
+            Username
+            <input type="text" id="username-input" name="username" placeholder="codex-fan" required />
+          </label>
+          <button type="submit">Enter chat</button>
+        </form>
+      </section>
+
+      <section id="chat-section" class="hidden">
+        <div id="chat-log" class="chat-log"></div>
+        <form id="chat-form">
+          <textarea id="message-input" rows="2" placeholder="Say hi..." required></textarea>
+          <div class="actions">
+            <span id="status" class="status"></span>
+            <button type="submit" id="send-btn">Send</button>
+          </div>
+        </form>
+      </section>
+    </main>
+
+    <template id="message-template">
+      <article class="bubble">
+        <div class="meta"></div>
+        <p></p>
+      </article>
+    </template>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

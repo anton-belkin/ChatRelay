@@ -1,0 +1,26 @@
+{
+  "name": "vscode2",
+  "version": "1.2.0",
+  "description": "Username-only chat client that proxies to OpenAI’s ChatGPT API and ships as a Docker container for NAS deployments.",
+  "main": "server.js",
+  "scripts": {
+    "dev": "nodemon server.js",
+    "start": "node server.js",
+    "test:e2e": "playwright test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2",
+    "openai": "^6.8.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.1",
+    "nodemon": "^3.1.11"
+  }
+}
