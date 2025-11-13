@@ -7,3 +7,10 @@ data/history.json
 playwright-report
 test-results
 cookies.txt
+
+# Test coverage
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+*.lcov

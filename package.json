@@ -6,7 +6,12 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test:e2e": "playwright test"
+    "test": "jest",
+    "test:unit": "jest --coverage",
+    "test:watch": "jest --watch",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test:unit && npm run test:e2e",
+    "test:ci": "jest --ci --coverage --maxWorkers=2"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +26,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
-    "nodemon": "^3.1.11"
+    "@types/jest": "^30.0.0",
+    "@types/supertest": "^6.0.3",
+    "jest": "^30.2.0",
+    "jest-environment-node": "^30.2.0",
+    "nodemon": "^3.1.11",
+    "supertest": "^7.1.4"
   }
 }

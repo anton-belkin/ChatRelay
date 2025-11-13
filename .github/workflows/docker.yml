@@ -18,7 +18,67 @@ env:
   IMAGE_NAME: nas-landing
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node.js dependencies
+        run: npm ci
+
+      - name: Run Node.js unit tests
+        run: npm run test:ci
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'agent-service/requirements.txt'
+
+      - name: Install Python dependencies
+        run: |
+          cd agent-service
+          pip install -r requirements.txt
+
+      - name: Run Python tests
+        run: |
+          cd agent-service
+          pytest
+
+      - name: Upload Node.js coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-node
+          path: coverage/
+
+      - name: Upload Python coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-python
+          path: agent-service/htmlcov/
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: |
+            coverage/
+            agent-service/htmlcov/
+
   docker:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: read
