@@ -148,6 +148,31 @@ const matchesDeterministicPrompt = (text) => {
 
 const shouldUseDeterministicTools = (text) => matchesDeterministicPrompt(text);
 
+const safeJsonStringify = (value, spacing = 2) => {
+  try {
+    if (typeof value === 'string') {
+      return JSON.stringify(JSON.parse(value), null, spacing);
+    }
+    return JSON.stringify(value, null, spacing);
+  } catch (error) {
+    if (typeof value === 'string') {
+      return value;
+    }
+    return String(value);
+  }
+};
+
+const formatToolRequestNote = (call) => {
+  const label = call.function?.name || 'tool';
+  const argsString = call.function?.arguments ? `\n${safeJsonStringify(call.function.arguments)}` : '';
+  return `🔧 ${label} requested.${argsString}`.trim();
+};
+
+const formatToolResultNote = (label, outputText) => {
+  const payload = outputText?.trim() || 'Tool completed but produced no output. Log with console.log to capture stdout.';
+  return `🔧 ${label} result:\n${payload}`;
+};
+
 const trimContext = (messages) => {
   if (!Array.isArray(messages)) return [];
   return messages.slice(-CONTEXT_MESSAGE_COUNT);
@@ -155,7 +180,7 @@ const trimContext = (messages) => {
 
 const sanitizeForModel = (messages) =>
   trimContext(messages)
-    .filter((msg) => msg && typeof msg.role === 'string')
+    .filter((msg) => msg && typeof msg.role === 'string' && msg.origin !== 'tool-request')
     .map((msg) => {
       const normalized = {
         role: SUPPORTED_ROLES.has(msg.role) ? msg.role : 'assistant',
@@ -362,23 +387,30 @@ const handleAssistantResponse = async ({
     }
 
     for (const call of toolCalls) {
+      const label = call.function?.name || 'tool';
+      const requestNote = formatToolRequestNote(call);
+      sendToken(`\n${requestNote}\n`);
+
       let outputText = '';
       try {
         const toolResult = await toolBridge.executeToolCall(call);
-        outputText = toolResult?.content || 'Tool completed without returning content.';
+        outputText = toolResult?.content || '';
       } catch (error) {
-        outputText = `Tool ${call.function?.name || 'unknown'} failed: ${error.message}`;
+        outputText = `Tool ${label} failed: ${error.message}`;
       }
-      const label = call.function?.name || 'tool';
-      const note = `🔧 ${label}:\n${outputText}`;
-      conversation.push({
+      const normalizedOutput = outputText?.trim()
+        ? outputText.trim()
+        : 'Tool completed but produced no output. Log with console.log to capture stdout.';
+      const resultEntry = {
         role: 'tool',
         name: label,
-        content: outputText,
+        content: normalizedOutput,
         tool_call_id: call.id,
-        origin: 'tool',
-      });
-      sendToken(`\n${note}\n`);
+        origin: 'tool-response',
+        request: call.function,
+      };
+      conversation.push(resultEntry);
+      sendToken(`\n${formatToolResultNote(label, normalizedOutput)}\n`);
     }
 
     iterations += 1;

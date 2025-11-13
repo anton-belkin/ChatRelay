@@ -53,14 +53,24 @@ test.describe('ChatGPT Relay', () => {
     await sendMessage(page, JS_TRIGGER_PROMPT);
 
     const assistantBubbles = page.locator('.bubble.assistant');
-    const toolBubble = page.locator('.bubble.tool').last();
-    await expect(toolBubble).toBeVisible();
-    await expect(toolBubble).not.toContainText('Docker is not running');
-    await expect(toolBubble).toContainText('10');
+    const toolPanel = page.locator('.bubble.tool-response details').last();
+    await expect(toolPanel).toBeVisible();
+    await expect(toolPanel).not.toContainText('Docker is not running');
+    await expect(toolPanel.locator('pre')).toContainText('10');
 
     const finalAssistant = assistantBubbles.last();
     await expect(finalAssistant).toContainText('10');
     await expect(finalAssistant).not.toContainText('Requested JavaScript');
+  });
+
+  test('answers follow-up prompt immediately after a tool call', async ({ page }) => {
+    const username = uniqueUser();
+    await login(page, username);
+    await sendMessage(page, JS_TRIGGER_PROMPT);
+    await sendMessage(page, 'Thanks! Can you confirm the number you computed?');
+
+    const finalAssistant = page.locator('.bubble.assistant').last();
+    await expect(finalAssistant).toContainText('10');
   });
 
   test('lists fetch tool from MCP gateway', async ({ page }) => {

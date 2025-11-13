@@ -25,6 +25,24 @@ const state = {
   toolbeltCollapsed: true,
 };
 
+const createCollapsibleBlock = ({ title, text, open = false }) => {
+  const details = document.createElement('details');
+  details.classList.add('collapsible');
+  details.open = open;
+  const summary = document.createElement('summary');
+  summary.textContent = title;
+  const pre = document.createElement('pre');
+  pre.textContent = text || '—';
+  details.append(summary, pre);
+  return details;
+};
+
+const appendPlainText = (container, text) => {
+  const paragraph = document.createElement('p');
+  paragraph.textContent = text || '';
+  container.appendChild(paragraph);
+};
+
 const renderMessages = () => {
   chatLog.innerHTML = '';
   state.messages.forEach((entry) => {
@@ -33,24 +51,50 @@ const renderMessages = () => {
     const role = entry.role || 'assistant';
     const origin = entry.origin || '';
     bubble.classList.add(role);
-    if (origin === 'sandbox') {
-      bubble.classList.add('sandbox');
+    if (origin === 'tool-request') {
+      bubble.classList.add('tool-request');
     }
-    if (role === 'tool' || origin === 'tool') {
-      bubble.classList.add('tool');
+    if (role === 'tool' || origin === 'tool-response') {
+      bubble.classList.add('tool', 'tool-response');
     }
 
     let authorLabel = 'Assistant';
     if (role === 'user') {
       authorLabel = state.username;
     }
-    if (origin === 'sandbox') {
-      authorLabel = 'JavaScript Sandbox';
-    } else if (role === 'tool' || origin === 'tool') {
+    if (origin === 'tool-request') {
+      authorLabel = entry.name ? `Tool Call • ${entry.name}` : 'Tool call';
+    } else if (role === 'tool' || origin === 'tool-response') {
       authorLabel = entry.name ? `Tool • ${entry.name}` : 'Tool output';
     }
     clone.querySelector('.meta').textContent = authorLabel;
-    clone.querySelector('p').textContent = entry.content;
+    const bodyEl = clone.querySelector('.body');
+    bodyEl.innerHTML = '';
+    if (origin === 'tool-request') {
+      bodyEl.appendChild(
+        createCollapsibleBlock({
+          title: authorLabel,
+          text: entry.content,
+        }),
+      );
+    } else if (role === 'tool' || origin === 'tool-response') {
+      if (entry.request) {
+        bodyEl.appendChild(
+          createCollapsibleBlock({
+            title: `${authorLabel} request`,
+            text: JSON.stringify(entry.request, null, 2),
+          }),
+        );
+      }
+      bodyEl.appendChild(
+        createCollapsibleBlock({
+          title: `${authorLabel} output`,
+          text: entry.content,
+        }),
+      );
+    } else {
+      appendPlainText(bodyEl, entry.content);
+    }
     chatLog.appendChild(clone);
   });
   chatLog.scrollTop = chatLog.scrollHeight;
@@ -274,6 +318,7 @@ chatForm.addEventListener('submit', async (event) => {
     renderMessages();
   } finally {
     setBusy(false, '');
+    messageInput.focus();
   }
 });
 

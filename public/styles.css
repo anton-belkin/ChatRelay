@@ -198,20 +198,60 @@ button[type='submit'] {
   align-self: flex-start;
 }
 
-.bubble.tool {
+.bubble .body {
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+}
+
+.bubble.tool,
+.bubble.tool-response {
   align-self: flex-start;
   border-left: 4px solid rgba(16, 185, 129, 0.85);
   background: rgba(16, 185, 129, 0.15);
   font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
-  white-space: pre-wrap;
 }
 
-.bubble.sandbox {
-  align-self: flex-start;
-  border-left: 4px solid rgba(59, 130, 246, 0.8);
-  background: rgba(59, 130, 246, 0.15);
-  font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
+.bubble.tool-request {
+  border-left: 4px solid rgba(248, 250, 252, 0.35);
+  background: rgba(248, 250, 252, 0.08);
+}
+
+.bubble .body details {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 10px;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.bubble .body details summary {
+  cursor: pointer;
+  font-weight: 600;
+  list-style: none;
+}
+
+.bubble .body details summary::-webkit-details-marker {
+  display: none;
+}
+
+.bubble .body details summary::after {
+  content: '▼';
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 0.75rem;
+  opacity: 0.6;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+}
+
+.bubble .body details[open] summary::after {
+  transform: rotate(0deg);
+}
+
+.bubble .body pre {
   white-space: pre-wrap;
+  font-family: 'JetBrains Mono', 'Fira Code', 'SFMono-Regular', monospace;
+  font-size: 0.85rem;
+  margin: 0.5rem 0 0;
 }
 
 .bubble .meta {
