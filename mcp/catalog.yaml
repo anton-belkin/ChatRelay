@@ -1,0 +1,28 @@
+name: custom-mcp
+displayName: Custom MCP Catalog
+registry:
+  fetch:
+    description: Fetches a URL from the internet and extracts its contents as markdown.
+    title: Fetch (Reference)
+    type: server
+    image: mcp/fetch@sha256:ef9535a3f07249142f9ca5a6033d7024950afdb6dc05e98292794a23e9f5dfbe
+    tools:
+      - name: fetch
+  node-code-sandbox:
+    description: A Node.js–based MCP server that spins up disposable Docker containers to execute arbitrary JavaScript.
+    title: Node.js Sandbox
+    type: server
+    image: mcp/node-code-sandbox@sha256:6b7180ab719dab2028dfc689002295ed6d55f7cc6217122d5025d849d5269666
+    env:
+      - name: FILES_DIR
+        value: /tmp
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    tools:
+      - name: get_dependency_types
+      - name: run_js
+      - name: run_js_ephemeral
+      - name: sandbox_exec
+      - name: sandbox_initialize
+      - name: sandbox_stop
+      - name: search_npm_packages

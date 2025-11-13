@@ -14,6 +14,7 @@ const toolbeltSection = document.getElementById('toolbelt');
 const toolListEl = document.getElementById('tool-list');
 const toolStatusEl = document.getElementById('tool-status');
 const toolRefreshBtn = document.getElementById('tool-refresh-btn');
+const toolToggleBtn = document.getElementById('tool-toggle-btn');
 
 const state = {
   username: null,
@@ -21,6 +22,7 @@ const state = {
   busy: false,
   version: '—',
   tools: [],
+  toolbeltCollapsed: true,
 };
 
 const renderMessages = () => {
@@ -57,6 +59,10 @@ const renderMessages = () => {
 const renderTools = () => {
   if (!toolbeltSection) return;
   toolbeltSection.classList.remove('hidden');
+  toolbeltSection.classList.toggle('collapsed', !!state.toolbeltCollapsed);
+  if (toolToggleBtn) {
+    toolToggleBtn.textContent = state.toolbeltCollapsed ? 'Show tools' : 'Hide tools';
+  }
   if (!state.tools.length) {
     if (toolListEl) toolListEl.innerHTML = '';
     if (toolStatusEl) {
@@ -65,7 +71,8 @@ const renderTools = () => {
     return;
   }
   if (toolStatusEl) {
-    toolStatusEl.textContent = `${state.tools.length} tool${state.tools.length === 1 ? '' : 's'} connected.`;
+    const label = `${state.tools.length} tool${state.tools.length === 1 ? '' : 's'} connected.`;
+    toolStatusEl.textContent = label;
   }
   if (toolListEl) {
     toolListEl.innerHTML = '';
@@ -81,22 +88,25 @@ const renderTools = () => {
 };
 
 const setTools = (tools = []) => {
-  state.tools = tools;
+  const normalized = Array.isArray(tools) ? tools : [];
+  const remoteOnly = normalized.filter((tool) => tool.origin !== 'local');
+  state.tools = remoteOnly.length ? remoteOnly : normalized;
   renderTools();
 };
 
-const fetchTools = async () => {
+const fetchTools = async ({ force = false } = {}) => {
   if (toolStatusEl) {
     toolStatusEl.textContent = 'Loading tools…';
   }
   try {
-    const data = await safeFetch('/api/tools', { method: 'GET' });
+    const url = force ? '/api/tools?force=1' : '/api/tools';
+    const data = await safeFetch(url, { method: 'GET' });
     setTools(data.tools || []);
   } catch (error) {
+    setTools([]);
     if (toolStatusEl) {
       toolStatusEl.textContent = `Failed to load tools: ${error.message}`;
     }
-    setTools([]);
   }
 };
 
@@ -117,6 +127,9 @@ const setAuthenticated = ({ username, messages, version }) => {
   chatSection.classList.remove('hidden');
   logoutBtn.classList.remove('hidden');
   renderMessages();
+  if (messageInput) {
+    requestAnimationFrame(() => messageInput.focus());
+  }
 };
 
 const clearSession = () => {
@@ -221,7 +234,6 @@ loginForm.addEventListener('submit', async (event) => {
       body: JSON.stringify({ username }),
     });
     setAuthenticated({ username: data.username, messages: data.messages ?? [], version: data.version });
-    messageInput.focus();
   } catch (error) {
     statusEl.textContent = error.message;
   } finally {
@@ -302,7 +314,7 @@ const bootstrap = async () => {
     }
   }
 
-  await fetchTools().catch(() => {
+  await fetchTools({ force: true }).catch(() => {
     /* already handled */
   });
 };
@@ -327,6 +339,13 @@ if (messageInput) {
 
 if (toolRefreshBtn) {
   toolRefreshBtn.addEventListener('click', () => {
-    fetchTools();
+    fetchTools({ force: true });
+  });
+}
+
+if (toolToggleBtn) {
+  toolToggleBtn.addEventListener('click', () => {
+    state.toolbeltCollapsed = !state.toolbeltCollapsed;
+    renderTools();
   });
 }

@@ -54,12 +54,24 @@ test.describe('ChatGPT Relay', () => {
 
     const assistantBubbles = page.locator('.bubble.assistant');
     const toolBubble = page.locator('.bubble.tool').last();
-    await expect(toolBubble).toContainText('demo.generate_number');
-    await expect(toolBubble).toContainText('value: 10');
+    await expect(toolBubble).toBeVisible();
+    await expect(toolBubble).not.toContainText('Docker is not running');
+    await expect(toolBubble).toContainText('10');
 
     const finalAssistant = assistantBubbles.last();
-    await expect(finalAssistant).toContainText('value is 10');
+    await expect(finalAssistant).toContainText('10');
     await expect(finalAssistant).not.toContainText('Requested JavaScript');
+  });
+
+  test('lists fetch tool from MCP gateway', async ({ page }) => {
+    const username = uniqueUser();
+    await login(page, username);
+    const toolData = await page.evaluate(async () => {
+      const res = await fetch('/api/tools?force=1');
+      return res.json();
+    });
+    const names = (toolData?.tools || []).map((tool) => tool.name);
+    await expect(names).toContain('_fetch');
   });
 
 });

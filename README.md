@@ -58,12 +58,13 @@ Leave that terminal open; it exposes:
 
 - A lightweight FastAPI service in `agent-service/` connects to Docker’s MCP Gateway via `agno`’s `MCPTools`. It lists every MCP tool, refreshes connections, and exposes a simple HTTP API (`/tools`, `/call-tool`).
 - The Node backend asks this service for tool metadata before every turn and passes them to OpenAI via the official function-calling interface. When the model chooses a tool, the backend calls the FastAPI service, posts the result into the transcript, then resumes the model with the new context.
-- A built-in fallback tool `demo.generate_number` lives inside the service so local smoke tests work even before you plug in real MCP servers.
+- A built-in fallback tool `demo_generate_number` lives inside the service so local smoke tests work even before you plug in real MCP servers.
+- The Docker MCP Gateway container now mounts `mcp/catalog.yaml`, which pins the `fetch` and `node-code-sandbox` servers and injects the mounts they need (most importantly `/var/run/docker.sock` for the sandbox). This keeps the configuration portable (NAS-friendly) and guarantees the toolbelt always matches the repo state.
 
 ### Configuring Docker MCP Gateway
 
-1. Enable Docker’s MCP Toolkit and make sure `docker/mcp-gateway` can access whatever catalog entries you need (for example, `github`).
-2. Provide any required secrets via the Docker MCP CLI, e.g. `docker mcp secret set github.personal_access_token=<TOKEN>`.
+1. Review `mcp/catalog.yaml` to confirm the servers you want (defaults to Fetch + Node.js Sandbox). Add secrets there if the chosen MCPs require them.
+2. Provide any required secrets via the Docker MCP CLI, e.g. `docker mcp secret set fetch.api_key=<TOKEN>`.
 3. Update `.env` with the gateway URL the FastAPI service should call (defaults to `http://mcp-gateway:8080` inside Compose).
 4. `docker compose -f docker-compose.dev.yml up --build` now brings up three services:
    - `app`: the existing Node/Express server + UI
@@ -74,7 +75,7 @@ Leave that terminal open; it exposes:
 
 Set `FAKE_OPENAI_MODE=1` (and keep the default trigger prompt `please call JS that outputs 10`) to avoid OpenAI calls during CI. In this mode the server:
 
-- Detects the fake prompt and pretends the assistant chose the `demo.generate_number` tool.
+- Detects the fake prompt and pretends the assistant chose the `demo_generate_number` tool.
 - Actually calls the tool via the FastAPI service so we still exercise the full MCP path.
 - Streams a friendly explanation (“the tool returned 10”) after the synthetic tool call completes.
 
@@ -132,6 +133,7 @@ Both files follow the template in `.env.example` and must contain the OpenAI key
 ### Automated Playwright suite
 
 - Specs live in `tests/e2e` and run via `@playwright/test`. The shared config (`playwright.config.ts`) defaults to `http://127.0.0.1:8081`, so the CLI and the VS Code Playwright Test extension execute the exact same suite.
+- **Important:** On macOS and similar locked-down environments, Chromium needs elevated permissions to launch from automation. When running `npm run test:e2e` make sure you allow the command to execute with elevated privileges (e.g., via the Codex CLI approval flow) so the headless browser can start.
 - Run locally:
   ```bash
   npm install

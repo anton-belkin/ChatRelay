@@ -24,10 +24,10 @@ LOCAL_TOOLS: Dict[str, Dict[str, Any]] = {}
 
 async def _generate_number(value: int = 10) -> ToolResult:
     normalized = int(value)
-    return ToolResult(content=f"demo.generate_number produced value: {normalized}")
+    return ToolResult(content=f"demo_generate_number produced value: {normalized}")
 
 
-LOCAL_TOOLS["demo.generate_number"] = {
+LOCAL_TOOLS["demo_generate_number"] = {
     "description": "Returns the provided integer (defaults to 10). Useful for diagnostics and tests.",
     "parameters": {
         "type": "object",

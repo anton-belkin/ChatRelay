@@ -14,7 +14,7 @@
 1. **Streaming SSE** remains unchanged. The UI expects `delta` + `done` events, so tool notes are streamed as textual inserts to avoid breaking the event contract.
 2. **Hybrid tool orchestration**: Instead of crafting bespoke `<run_js>` tags, we rely on OpenAI’s function calling. `lib/toolBridge.js` fetches MCP tool metadata, caches it, and maps it into OpenAI’s schema. This keeps the Node layer focused on SSE/session logic while the FastAPI service manages MCP transports, retries, and secrets.
 3. **Docker MCP Gateway** is now part of the dev compose stack. The FastAPI service connects via Streamable HTTP (`MCP_TRANSPORT=streamable-http`). Secrets are still managed through `docker mcp secret set …` outside the repo.
-4. **Deterministic tool mode**: `FAKE_OPENAI_MODE=1` plus the `FAKE_TOOL_PROMPT` flag short-circuits OpenAI calls but continues to exercise the MCP pathway by invoking the local `demo.generate_number` tool via the FastAPI service. Playwright relies on this for CI.
+4. **Deterministic tool mode**: `FAKE_OPENAI_MODE=1` plus the `FAKE_TOOL_PROMPT` flag short-circuits OpenAI calls but continues to exercise the MCP pathway by invoking the local `demo_generate_number` tool via the FastAPI service. Playwright relies on this for CI.
 5. **Resilience**: Tool metadata is cached with a configurable TTL. If the MCP Gateway is down, the bridge logs once and falls back to the built-in local tool so the UI/API stay responsive.
 
 ## TODO / Next Steps

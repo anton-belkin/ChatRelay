@@ -74,6 +74,11 @@ h1 {
   margin-bottom: 0.75rem;
 }
 
+.toolbelt-buttons {
+  display: flex;
+  gap: 0.5rem;
+}
+
 .toolbelt h2 {
   margin: 0;
   font-size: 1rem;
@@ -95,6 +100,14 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.toolbelt.collapsed #tool-list {
+  display: none;
+}
+
+.toolbelt.collapsed .tool-status {
+  margin-bottom: 0;
 }
 
 #tool-list li {

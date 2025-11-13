@@ -17,7 +17,7 @@ const DEFAULT_FAKE_TOOL_PROMPT = 'please call JS that outputs 10';
 const FAKE_TOOL_PROMPT = (
   process.env.FAKE_TOOL_PROMPT || (FAKE_OPENAI_MODE ? DEFAULT_FAKE_TOOL_PROMPT : '')
 ).trim();
-const FAKE_TOOL_NAME = process.env.FAKE_TOOL_NAME || 'demo.generate_number';
+const FAKE_TOOL_NAME = process.env.FAKE_TOOL_NAME || 'demo_generate_number';
 const FAKE_TOOL_ARGUMENTS = process.env.FAKE_TOOL_ARGUMENTS || '{"value": 10}';
 let FAKE_TOOL_ARGUMENTS_PARSED = {};
 try {
@@ -86,7 +86,8 @@ app.get('/api/meta', (req, res) => {
 
 app.get('/api/tools', async (req, res) => {
   try {
-    const tools = await toolBridge.listToolsForApi();
+    const force = req.query?.force === '1' || req.query?.force === 'true';
+    const tools = await toolBridge.listToolsForApi({ force });
     res.json({ tools, version: APP_VERSION });
   } catch (error) {
     res.status(502).json({ error: error.message || 'Failed to load tools' });
@@ -183,7 +184,7 @@ const normalizeStoredEntry = (entry) => {
 const simulateDeterministicTurn = ({ iteration, sendToken }) => {
   if (iteration === 0) {
     const intro =
-      'Understood. I will call the demo.generate_number tool to fetch the number you asked about.';
+      'Understood. I will call the demo_generate_number tool to fetch the number you asked about.';
     if (typeof sendToken === 'function') {
       sendToken(intro);
     }
@@ -220,12 +221,17 @@ const streamModelResponse = async ({
     return simulateDeterministicTurn({ iteration, sendToken });
   }
 
-  if (!openai) {
-    if (FAKE_OPENAI_MODE) {
-      const offlineText = 'Offline mode: response generated without calling OpenAI.';
-      sendToken(offlineText);
-      return { content: offlineText, toolCalls: [] };
+  if (FAKE_OPENAI_MODE) {
+    const fallback =
+      [...payload].reverse().find((msg) => msg.role === 'user')?.content ||
+      'Offline mode response.';
+    if (typeof sendToken === 'function') {
+      sendToken(fallback);
     }
+    return { content: fallback, toolCalls: [] };
+  }
+
+  if (!openai) {
     throw new Error('OPENAI_API_KEY is not configured on the server.');
   }
 

@@ -9,7 +9,7 @@ services:
       PORT: 8081
       FAKE_OPENAI_MODE: ${FAKE_OPENAI_MODE:-0}
       FAKE_TOOL_PROMPT: ${FAKE_TOOL_PROMPT:-}
-      FAKE_TOOL_NAME: ${FAKE_TOOL_NAME:-demo.generate_number}
+      FAKE_TOOL_NAME: ${FAKE_TOOL_NAME:-demo_generate_number}
       FAKE_TOOL_ARGUMENTS: ${FAKE_TOOL_ARGUMENTS:-{"value":10}}
       TOOL_SERVICE_URL: http://agent-service:8090
     ports:
@@ -42,9 +42,11 @@ services:
     command:
       - --verbose
       - --transport=streaming
-      - --servers=github
+      - --catalog=/mcp-config/catalog.yaml
+      - --servers=fetch,node-code-sandbox
       - --port=8080
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./mcp:/mcp-config:ro
     ports:
       - "8080:8080"

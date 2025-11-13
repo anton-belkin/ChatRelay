@@ -1,6 +1,6 @@
 {
   "name": "vscode2",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Username-only chat client that proxies to OpenAI’s ChatGPT API and ships as a Docker container for NAS deployments.",
   "main": "server.js",
   "scripts": {
