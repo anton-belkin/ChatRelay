@@ -1,0 +1,192 @@
+{
+  "AWSEBDockerrunVersion": 2,
+  "containerDefinitions": [
+    {
+      "name": "main-app",
+      "image": "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/chatrelay/main-app:latest",
+      "essential": true,
+      "memory": 512,
+      "portMappings": [
+        {
+          "hostPort": 8081,
+          "containerPort": 8081,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "8081"
+        },
+        {
+          "name": "AGENT_SERVICE_URL",
+          "value": "http://localhost:8090"
+        },
+        {
+          "name": "TOOL_BRIDGE_URL",
+          "value": "http://localhost:8080"
+        }
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "efs-data",
+          "containerPath": "/app/data",
+          "readOnly": false
+        }
+      ],
+      "links": [
+        "agent-service",
+        "mcp-gateway"
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/elasticbeanstalk/chatrelay/main-app",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "main-app",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8081/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    },
+    {
+      "name": "agent-service",
+      "image": "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/chatrelay/agent-service:latest",
+      "essential": true,
+      "memory": 256,
+      "portMappings": [
+        {
+          "hostPort": 8090,
+          "containerPort": 8090,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "PORT",
+          "value": "8090"
+        },
+        {
+          "name": "LOG_LEVEL",
+          "value": "info"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/elasticbeanstalk/chatrelay/agent-service",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "agent-service",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8090/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 40
+      }
+    },
+    {
+      "name": "mcp-gateway",
+      "image": "<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com/chatrelay/mcp-gateway:latest",
+      "essential": false,
+      "memory": 256,
+      "portMappings": [
+        {
+          "hostPort": 8080,
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "PORT",
+          "value": "8080"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/elasticbeanstalk/chatrelay/mcp-gateway",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "mcp-gateway",
+          "awslogs-create-group": "true"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:8080/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 40
+      }
+    },
+    {
+      "name": "nginx-proxy",
+      "image": "nginx:alpine",
+      "essential": true,
+      "memory": 128,
+      "portMappings": [
+        {
+          "hostPort": 80,
+          "containerPort": 80,
+          "protocol": "tcp"
+        }
+      ],
+      "links": [
+        "main-app"
+      ],
+      "mountPoints": [
+        {
+          "sourceVolume": "nginx-config",
+          "containerPath": "/etc/nginx/conf.d",
+          "readOnly": true
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/aws/elasticbeanstalk/chatrelay/nginx",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "nginx",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ],
+  "volumes": [
+    {
+      "name": "efs-data",
+      "host": {
+        "sourcePath": "/mnt/efs/data"
+      }
+    },
+    {
+      "name": "nginx-config",
+      "host": {
+        "sourcePath": "/var/app/current/nginx"
+      }
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+name: Deploy to AWS Elastic Beanstalk
+
+on:
+  push:
+    branches:
+      - main
+      - production
+  workflow_dispatch:
+
+env:
+  AWS_REGION: us-east-1
+  EB_APPLICATION_NAME: ChatRelay
+  EB_ENVIRONMENT_NAME: chatrelay-prod
+  DEPLOY_PACKAGE_NAME: chatrelay-${{ github.sha }}.zip
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Images
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push main-app image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          docker build -t $ECR_REGISTRY/chatrelay/main-app:$VERSION \
+            -t $ECR_REGISTRY/chatrelay/main-app:latest \
+            -f Dockerfile .
+          docker push $ECR_REGISTRY/chatrelay/main-app:$VERSION
+          docker push $ECR_REGISTRY/chatrelay/main-app:latest
+
+      - name: Build and push agent-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          docker build -t $ECR_REGISTRY/chatrelay/agent-service:$VERSION \
+            -t $ECR_REGISTRY/chatrelay/agent-service:latest \
+            -f agent-service/Dockerfile ./agent-service
+          docker push $ECR_REGISTRY/chatrelay/agent-service:$VERSION
+          docker push $ECR_REGISTRY/chatrelay/agent-service:latest
+
+      - name: Build and push mcp-gateway image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          VERSION: ${{ steps.version.outputs.VERSION }}
+        run: |
+          docker build -t $ECR_REGISTRY/chatrelay/mcp-gateway:$VERSION \
+            -t $ECR_REGISTRY/chatrelay/mcp-gateway:latest \
+            -f mcp/Dockerfile ./mcp
+          docker push $ECR_REGISTRY/chatrelay/mcp-gateway:$VERSION
+          docker push $ECR_REGISTRY/chatrelay/mcp-gateway:latest
+
+      - name: Update Dockerrun.aws.json with ECR paths
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        run: |
+          sed -i "s|<AWS_ACCOUNT_ID>.dkr.ecr.<AWS_REGION>.amazonaws.com|$ECR_REGISTRY|g" Dockerrun.aws.json
+          cat Dockerrun.aws.json
+
+      - name: Create deployment package
+        run: |
+          zip -r ${{ env.DEPLOY_PACKAGE_NAME }} \
+            Dockerrun.aws.json \
+            .ebextensions/ \
+            nginx/ \
+            -x "*.git*" "node_modules/*" "*.log"
+
+      - name: Upload deployment package to S3
+        run: |
+          aws s3 cp ${{ env.DEPLOY_PACKAGE_NAME }} \
+            s3://elasticbeanstalk-${{ env.AWS_REGION }}-${{ secrets.AWS_ACCOUNT_ID }}/${{ env.DEPLOY_PACKAGE_NAME }}
+
+      - name: Create new Elastic Beanstalk application version
+        run: |
+          aws elasticbeanstalk create-application-version \
+            --application-name ${{ env.EB_APPLICATION_NAME }} \
+            --version-label ${{ github.sha }} \
+            --source-bundle S3Bucket="elasticbeanstalk-${{ env.AWS_REGION }}-${{ secrets.AWS_ACCOUNT_ID }}",S3Key="${{ env.DEPLOY_PACKAGE_NAME }}" \
+            --description "Commit ${{ github.sha }}"
+
+      - name: Deploy to Elastic Beanstalk
+        run: |
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ env.EB_APPLICATION_NAME }} \
+            --environment-name ${{ env.EB_ENVIRONMENT_NAME }} \
+            --version-label ${{ github.sha }}
+
+      - name: Wait for deployment to complete
+        run: |
+          aws elasticbeanstalk wait environment-updated \
+            --application-name ${{ env.EB_APPLICATION_NAME }} \
+            --environment-name ${{ env.EB_ENVIRONMENT_NAME }}
+
+      - name: Get environment health
+        run: |
+          aws elasticbeanstalk describe-environment-health \
+            --environment-name ${{ env.EB_ENVIRONMENT_NAME }} \
+            --attribute-names All
+
+  verify-deployment:
+    name: Verify Deployment
+    needs: build-and-push
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Get environment URL
+        id: get-url
+        run: |
+          URL=$(aws elasticbeanstalk describe-environments \
+            --application-name ${{ env.EB_APPLICATION_NAME }} \
+            --environment-names ${{ env.EB_ENVIRONMENT_NAME }} \
+            --query 'Environments[0].CNAME' \
+            --output text)
+          echo "URL=http://$URL" >> $GITHUB_OUTPUT
+          echo "Environment URL: http://$URL"
+
+      - name: Health check
+        run: |
+          sleep 30  # Wait for services to stabilize
+          curl -f ${{ steps.get-url.outputs.URL }}/health || exit 1
+          echo "Health check passed!"
+
+      - name: Smoke test
+        run: |
+          # Test main page
+          STATUS=$(curl -s -o /dev/null -w '%{http_code}' ${{ steps.get-url.outputs.URL }})
+          if [ $STATUS -eq 200 ]; then
+            echo "Main page test passed (HTTP $STATUS)"
+          else
+            echo "Main page test failed (HTTP $STATUS)"
+            exit 1
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "✅ Deployment successful!"
+          echo "🌐 Environment: ${{ env.EB_ENVIRONMENT_NAME }}"
+          echo "🔗 URL: ${{ steps.get-url.outputs.URL }}"
+          echo "📦 Version: ${{ github.sha }}"
+          echo "🏷️  Tag: ${{ github.ref_name }}"
